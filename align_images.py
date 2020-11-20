@@ -26,6 +26,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Align faces from input images', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('raw_dir', help='Directory with raw images for face alignment')
     parser.add_argument('aligned_dir', help='Directory for storing aligned images')
+    parser.add_argument('coord_dir', help='Directory for saving face coordinates')
     parser.add_argument('--output_size', default=1024, help='The dimension of images for input to the model', type=int)
     parser.add_argument('--x_scale', default=1, help='Scaling factor for x dimension', type=float)
     parser.add_argument('--y_scale', default=1, help='Scaling factor for y dimension', type=float)
@@ -38,6 +39,7 @@ if __name__ == "__main__":
                                                LANDMARKS_MODEL_URL, cache_subdir='temp'))
     RAW_IMAGES_DIR = args.raw_dir
     ALIGNED_IMAGES_DIR = args.aligned_dir
+    COORDS_DIR = args.coord_dir
 
     landmarks_detector = LandmarksDetector(landmarks_model_path)
     for img_name in os.listdir(RAW_IMAGES_DIR):
@@ -53,7 +55,10 @@ if __name__ == "__main__":
                     print('Starting face alignment...')
                     face_img_name = '%s_%02d.png' % (os.path.splitext(img_name)[0], i)
                     aligned_face_path = os.path.join(ALIGNED_IMAGES_DIR, face_img_name)
-                    image_align(raw_img_path, aligned_face_path, face_landmarks, output_size=args.output_size, x_scale=args.x_scale, y_scale=args.y_scale, em_scale=args.em_scale, alpha=args.use_alpha)
+                    coords_img_name = '%s_%02d' % (os.path.splitext(img_name)[0], i)
+                    coords_path = os.path.join(COORDS_DIR, coords_img_name)
+                    print(coords_path)
+                    image_align(raw_img_path, aligned_face_path, coords_path, face_landmarks, output_size=args.output_size, x_scale=args.x_scale, y_scale=args.y_scale, em_scale=args.em_scale, alpha=args.use_alpha)
                     print('Wrote result %s' % aligned_face_path)
                 except:
                     print("Exception in face alignment!")

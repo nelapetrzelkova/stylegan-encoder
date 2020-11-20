@@ -4,7 +4,7 @@ import os
 import PIL.Image
 
 
-def image_align(src_file, dst_file, face_landmarks, output_size=1024, transform_size=4096, enable_padding=True, x_scale=1, y_scale=1, em_scale=0.1, alpha=False):
+def image_align(src_file, dst_file, coords_file, face_landmarks, output_size=1024, transform_size=4096, enable_padding=True, x_scale=1, y_scale=1, em_scale=0.1, alpha=False):
         # Align function from FFHQ dataset pre-processing step
         # https://github.com/NVlabs/ffhq-dataset/blob/master/download_ffhq.py
 
@@ -38,6 +38,10 @@ def image_align(src_file, dst_file, face_landmarks, output_size=1024, transform_
         c = eye_avg + eye_to_mouth * em_scale
         quad = np.stack([c - x - y, c - x + y, c + x + y, c + x - y])
         qsize = np.hypot(*x) * 2
+
+        #Save coordinates of the face to file
+        coords = np.array([c, y, x])
+        np.save(coords_file, coords)
 
         # Load in-the-wild image.
         if not os.path.isfile(src_file):
