@@ -5,7 +5,7 @@ import os
 import kornia
 import cv2
 import matplotlib.pyplot as plt
-
+import torchvision
 
 def imshow_torch(tensor, *kwargs):
     plt.figure(figsize=(10,15))
@@ -143,14 +143,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Align faces from input images',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('raw_dir', help='Directory with raw images')
-    parser.add_argument('aligned_dir', help='Directory for storing aligned images')
-    parser.add_argument('coords_dir', help='Directory for saving face coordinates')
+    parser.add_argument('aligned_dir', help='Directory for loading aligned images')
+    parser.add_argument('coords_dir', help='Directory for loading face coordinates')
+    parser.add_argument('new_img_dir', help='Directory for saving new images')
 
     args, other_args = parser.parse_known_args()
 
     IMGS_PATH = args.raw_dir
     FACES_PATH = args.aligned_dir
     COORDS_PATH = args.coords_dir
+    NEW_PATH = args.new_img_dir
 
     c_dict = dict()
     for img_name in os.listdir(IMGS_PATH):
@@ -187,4 +189,6 @@ if __name__ == "__main__":
             coords = torch.from_numpy(c_dict[key])
             A = affine(coords)
             out = insert_faces_to_image(img, A, torch.from_numpy(gen_imgs))
-            imshow_torch(out / 255.)
+            img = torchvision.transforms.ToPILImage(mode='RGB')(out[0, :, :, :])
+            path = os.path.join(NEW_PATH, img_name)
+            img.save(path, "PNG")
