@@ -6,6 +6,19 @@ import kornia
 import cv2
 import matplotlib.pyplot as plt
 import torchvision
+import PIL.Image
+from imutils import face_utils
+import cv2
+import dlib
+import PIL.Image
+from keras.utils import get_file
+import bz2
+import numpy as np
+from PIL import ImageFilter
+
+
+
+
 
 def imshow_torch(tensor, *kwargs):
     plt.figure(figsize=(10,15))
@@ -71,9 +84,9 @@ def upsampling_needed(x, y):
     res = x.shape[1]
     fst_idx = np.argmin(x)
     snd_idx = np.argmin(y)
-    y1 = int(np.floor(fst_idx // res))
+    y1 = int(np.floor(fst_idx // res))-1
     x1 = fst_idx % res
-    y2 = int(np.floor(snd_idx // res))
+    y2 = int(np.floor(snd_idx // res))-1
     x2 = snd_idx % res
     a = np.array([y[0, y1, x1], x[0, y1, x1]])
     b = np.array([y[0, y2, x2], x[0, y2, x2]])
@@ -137,6 +150,70 @@ def insert_faces_to_image(input_img: torch.Tensor,
     for i in range(num_patches):
         input_img[:, :, y_coords[i, :, :], x_coords[i, :, :]] = gen_imgs[i, :, :, :]
     return input_img
+
+
+def unpack_bz2(src_path):
+    data = bz2.BZ2File(src_path).read()
+    dst_path = src_path[:-4]
+    with open(dst_path, 'wb') as fp:
+        fp.write(data)
+    return dst_path
+
+
+def generate_face_mask(im, use_grabcut=True, scale_mask=1.4):
+    detector = dlib.get_frontal_face_detector()
+    LANDMARKS_MODEL_URL = 'http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2'
+    landmarks_model_path = unpack_bz2(get_file('shape_predictor_68_face_landmarks.dat.bz2',
+                                               LANDMARKS_MODEL_URL, cache_subdir='temp'))
+    predictor = dlib.shape_predictor(landmarks_model_path)
+    im = np.array(im)
+    rects = detector(im, 1)
+    # loop over the face detections
+    for (j, rect) in enumerate(rects):
+        """
+        Determine the facial landmarks for the face region, then convert the facial landmark (x, y)-coordinates to a NumPy array
+        """
+        shape = predictor(im, rect)
+        shape = face_utils.shape_to_np(shape)
+
+        # we extract the face
+        vertices = cv2.convexHull(shape)
+        mask = np.zeros(im.shape[:2], np.uint8)
+        cv2.fillConvexPoly(mask, vertices, 1)
+        if use_grabcut:
+            bgdModel = np.zeros((1, 65), np.float64)
+            fgdModel = np.zeros((1, 65), np.float64)
+            rect = (0, 0, im.shape[1], im.shape[2])
+            (x, y), radius = cv2.minEnclosingCircle(vertices)
+            center = (int(x), int(y))
+            radius = int(radius * scale_mask)
+            mask = cv2.circle(mask, center, radius, cv2.GC_PR_FGD, -1)
+            cv2.fillConvexPoly(mask, vertices, cv2.GC_FGD)
+            cv2.grabCut(im, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_MASK)
+            mask = np.where((mask == 2) | (mask == 0), 0, 1)
+        imask = (255 * mask).astype('uint8')
+        imask = PIL.Image.fromarray(imask, 'L')
+        # imask.save(dest, 'PNG')
+        return imask
+
+def apply_masks(gen_imgs, composite_blur=8):
+    ORIG_GEN_PATH = 'generated_images'
+    MASK_PATH = 'masks'
+    ORIGINAL_PATH = 'aligned_images'
+    images = sorted(os.listdir(ORIG_GEN_PATH))
+    new_imgs = np.zeros_like(gen_imgs)
+    for i, gen_img in enumerate(gen_imgs):
+        orig_img = np.array(PIL.Image.open(os.path.join(ORIG_GEN_PATH, images[i])))
+        # dest = os.path.join(MASK_PATH, image)
+        img = PIL.Image.fromarray(gen_img)
+        mask = generate_face_mask(img)
+        mask = mask.filter(ImageFilter.GaussianBlur(composite_blur))
+        mask = np.array(mask) / 255
+        mask = np.expand_dims(mask, axis=-1)
+        img_array = mask * np.array(gen_img) + (1.0 - mask) * np.array(orig_img)
+        img_array = img_array.astype(np.uint8)
+        new_imgs[i, :, :, :] = img_array
+    return new_imgs
 
 
 if __name__ == "__main__":
