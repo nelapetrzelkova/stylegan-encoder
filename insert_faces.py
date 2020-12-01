@@ -124,6 +124,28 @@ def create_grid(A: torch.Tensor, num_patches: int, PS: int):
     return x_coords, y_coords
 
 
+def padding_needed(input_img, x, y):
+    pad_val = 0
+    b, c, h, w = input_img.shape
+    min_y, max_y, min_x, max_x = np.min(y), np.max(y), np.min(x), np.max(x)
+    if min_y < 0:
+        pad_val = -min_y
+    if max_y > h and max_y-h > pad_val:
+      pad_val = max_y-h
+    if min_x < 0 and -min_x > pad_val:
+        pad_val = -min_x
+    if max_x > w and max_x-w > pad_val:
+      pad_val = max_x-w
+    return pad_val
+
+
+def pad_img(input_img, val):
+    b, c, h, w = input_img.shape
+    padded_img = np.zeros((b, c, h+val, w+val))
+    padded_img[:, :, :h, :w] = input_img
+    return padded_img
+
+
 def insert_faces_to_image(input_img: torch.Tensor,
                           A: torch.Tensor,
                           gen_imgs: torch.Tensor):
@@ -140,16 +162,23 @@ def insert_faces_to_image(input_img: torch.Tensor,
     """
     num_patches = A.size(0)
     PS = gen_imgs.size(2)
+    b, c, h, w = input_img.shape
     x_coords, y_coords = create_grid(A, num_patches, PS)
     while upsampling_needed(x_coords,
                             y_coords):  # when the face in the original image has bigger resolution then generated image
         gen_imgs = upsample(gen_imgs)
         PS *= 2
         x_coords, y_coords = create_grid(A, num_patches, PS)
-    # TODO: solve when the square with face is not whole in the photo
+    pad_val = padding_needed(input_img, x_coords, y_coords)
+    if pad_val > 0:
+        input = pad_img(input_img, pad_val)
     for i in range(num_patches):
         input_img[:, :, y_coords[i, :, :], x_coords[i, :, :]] = gen_imgs[i, :, :, :]
-    return input_img
+    if pad_val > 0:
+        output = input_img[:, :, :h, :w]
+    else:
+        output = input_img
+    return output
 
 
 def unpack_bz2(src_path):
@@ -195,6 +224,7 @@ def generate_face_mask(im, use_grabcut=True, scale_mask=1.4):
         imask = PIL.Image.fromarray(imask, 'L')
         # imask.save(dest, 'PNG')
         return imask
+
 
 def apply_masks(gen_imgs, composite_blur=8):
     ORIG_GEN_PATH = 'generated_images'
