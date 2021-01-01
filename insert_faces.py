@@ -6,7 +6,7 @@ import kornia
 import cv2
 import matplotlib.pyplot as plt
 import torchvision
-import PIL.Image
+import PIL
 from imutils import face_utils
 import cv2
 import dlib
@@ -15,9 +15,6 @@ from keras.utils import get_file
 import bz2
 import numpy as np
 from PIL import ImageFilter
-
-
-
 
 
 def imshow_torch(tensor, *kwargs):
@@ -245,7 +242,7 @@ def generate_face_mask(im, use_grabcut=True, scale_mask=1.4):
 def apply_masks(gen_imgs, background, composite_blur=8):
     new_imgs = np.zeros_like(gen_imgs)
     for i, gen_img in enumerate(gen_imgs):
-        img = Image.fromarray(gen_img)
+        img = PIL.Image.fromarray(gen_img)
         mask = generate_face_mask(img, use_grabcut=False)
         mask = mask.filter(ImageFilter.GaussianBlur(composite_blur))
         mask = np.array(mask)/255
