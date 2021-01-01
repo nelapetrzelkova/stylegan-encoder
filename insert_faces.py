@@ -146,7 +146,6 @@ def pad_img(input_img, val):
 def blend(inner, outer, transition=150):
     t = transition
     inner = np.transpose(inner, (1, 2, 0)).numpy()
-    outer = np.transpose(outer, (1, 2, 0)).numpy()
     print('s:', inner.shape, outer.shape)
     coeffs = np.linspace(0, 1, transition)[np.newaxis, :, np.newaxis]
     l = np.tile(coeffs, (inner.shape[1], 1, 3))
@@ -246,7 +245,8 @@ def apply_masks(gen_imgs, background, composite_blur=8):
         img = PIL.Image.fromarray(gen_img)
         mask = generate_face_mask(img, use_grabcut=False)
         mask = mask.filter(ImageFilter.GaussianBlur(composite_blur))
-        mask = np.array(mask)/255[:, :, np.newaxis]
+        mask = np.array(mask)/255
+        mask = np.expand_dims(mask, axis=-1)
         img_array = mask*np.array(gen_img) + (1.0-mask)*np.array(background)
         img_array = img_array.astype(np.uint8)
         new_imgs[i, :, :, :] = img_array
