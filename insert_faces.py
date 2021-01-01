@@ -146,8 +146,8 @@ def pad_img(input_img, val):
 def blend(inner, outer, transition=150):
     t = transition
     inner = np.transpose(inner, (1, 2, 0)).numpy()
-    print('s:', inner.shape, outer.shape)
-    coeffs = np.linspace(0, 1, transition)[np.newaxis, :, np.newaxis]
+    outer = np.transpose(outer, (1, 2, 0)).numpy()
+    coeffs = np.linspace(0, 1, t)[np.newaxis, :, np.newaxis]
     l = np.tile(coeffs, (inner.shape[1], 1, 3))
     r = np.flip(l, 1)
     u = np.transpose(l, (1, 0, 2))
@@ -156,7 +156,7 @@ def blend(inner, outer, transition=150):
     inner[-t:, :, :] = inner[-t:, :, :]*d + outer[-t:, :, :]*(1-d)
     inner[:, :t, :] = inner[:, :t, :]*l + outer[:, :t, :]*(1-l)
     inner[:, -t:, :] = inner[:, -t:, :]*r + outer[:, -t:, :]*(1-r)
-    return inner
+    return np.transpose(inner, (2, 0, 1))
 
 def insert_faces_to_image(input_img: torch.Tensor,
                           A: torch.Tensor,
@@ -186,7 +186,7 @@ def insert_faces_to_image(input_img: torch.Tensor,
         input = pad_img(input_img, pad_val)
     for i in range(num_patches):
         blended = blend(gen_imgs[i, :, :, :], input_img[0, :, y_coords[i, :, :], x_coords[i, :, :]])
-        input_img[0, :, y_coords[i, :, :], x_coords[i, :, :]] = blended
+        input_img[0, :, y_coords[i, :, :], x_coords[i, :, :]] = torch.from_numpy(blended)
     if pad_val > 0:
         output = input_img[:, :, :h, :w]
     else:
