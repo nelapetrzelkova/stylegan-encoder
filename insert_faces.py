@@ -146,6 +146,21 @@ def pad_img(input_img, val):
     return padded_img
 
 
+def blend(inner, outer, transition=150):
+    t = transition
+    inner = np.transpose(inner, (1, 2, 0)).numpy()
+    print('s:', inner.shape, outer.shape)
+    coeffs = np.linspace(0, 1, transition)[np.newaxis, :, np.newaxis]
+    l = np.tile(coeffs, (inner.shape[1], 1, 3))
+    r = np.flip(l, 1)
+    u = np.transpose(l, (1, 0, 2))
+    d = np.flip(u, 0)
+    inner[:t, :, :] = inner[:t, :, :]*u + outer[:t, :, :]*(1-u)
+    inner[-t:, :, :] = inner[-t:, :, :]*d + outer[-t:, :, :]*(1-d)
+    inner[:, :t, :] = inner[:, :t, :]*l + outer[:, :t, :]*(1-l)
+    inner[:, -t:, :] = inner[:, -t:, :]*r + outer[:, -t:, :]*(1-r)
+    return inner
+
 def insert_faces_to_image(input_img: torch.Tensor,
                           A: torch.Tensor,
                           gen_imgs: torch.Tensor):
@@ -173,7 +188,8 @@ def insert_faces_to_image(input_img: torch.Tensor,
     if pad_val > 0:
         input = pad_img(input_img, pad_val)
     for i in range(num_patches):
-        input_img[:, :, y_coords[i, :, :], x_coords[i, :, :]] = gen_imgs[i, :, :, :]
+        blended = blend(gen_imgs[i, :, :, :], input_img[0, :, y_coords[i, :, :], x_coords[i, :, :]])
+        input_img[0, :, y_coords[i, :, :], x_coords[i, :, :]] = blended
     if pad_val > 0:
         output = input_img[:, :, :h, :w]
     else:
@@ -226,76 +242,20 @@ def generate_face_mask(im, use_grabcut=True, scale_mask=1.4):
         return imask
 
 
-def apply_masks(gen_imgs, composite_blur=8):
-    ORIG_GEN_PATH = 'generated_images'
-    MASK_PATH = 'masks'
-    ORIGINAL_PATH = 'aligned_images'
-    images = sorted(os.listdir(ORIG_GEN_PATH))
+def apply_masks(gen_imgs, background, composite_blur=8):
     new_imgs = np.zeros_like(gen_imgs)
     for i, gen_img in enumerate(gen_imgs):
-        orig_img = np.array(PIL.Image.open(os.path.join(ORIG_GEN_PATH, images[i])))
-        # dest = os.path.join(MASK_PATH, image)
-        img = PIL.Image.fromarray(gen_img)
-        mask = generate_face_mask(img)
+        img = Image.fromarray(gen_img)
+        mask = generate_face_mask(img, use_grabcut=False)
         mask = mask.filter(ImageFilter.GaussianBlur(composite_blur))
-        mask = np.array(mask) / 255
-        mask = np.expand_dims(mask, axis=-1)
-        img_array = mask * np.array(gen_img) + (1.0 - mask) * np.array(orig_img)
+        mask = np.array(mask)/255
+        mask = np.expand_dims(mask,axis=-1)
+        img_array = mask*np.array(gen_img) + (1.0-mask)*np.array(background)
         img_array = img_array.astype(np.uint8)
         new_imgs[i, :, :, :] = img_array
     return new_imgs
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Align faces from input images',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('raw_dir', help='Directory with raw images')
-    parser.add_argument('aligned_dir', help='Directory for loading aligned images')
-    parser.add_argument('coords_dir', help='Directory for loading face coordinates')
-    parser.add_argument('new_img_dir', help='Directory for saving new images')
-
-    args, other_args = parser.parse_known_args()
-
-    IMGS_PATH = args.raw_dir
-    FACES_PATH = args.aligned_dir
-    COORDS_PATH = args.coords_dir
-    NEW_PATH = args.new_img_dir
-
-    c_dict = dict()
-    for img_name in os.listdir(IMGS_PATH):
-        if img_name.endswith('.jpg') or img_name.endswith('.JPG') or img_name.endswith('.png'):
-            name = img_name[:-4]
-            c_dict[name] = np.array([])
-    for coords_file in sorted(os.listdir(COORDS_PATH)):
-        if '.npy' in coords_file:  # sometimes there's a problem with .ipynb_checkpoints
-            path = os.path.join(COORDS_PATH, coords_file)
-            coords = np.load(path, allow_pickle=True)
-            key = coords_file[:-7]
-            if c_dict[key].shape[0] == 0:
-                c_dict[key] = coords[np.newaxis, :, :]
-            else:
-                new_shape = c_dict[key].shape[0] + 1
-                c_dict[key] = np.array(np.concatenate((c_dict[key], coords[np.newaxis, :, :]), axis=0))
-
-    for img_name in os.listdir(IMGS_PATH):
-        if img_name.endswith('.jpg') or img_name.endswith('.JPG') or img_name.endswith('.png'):
-            img = load_img(os.path.join(IMGS_PATH, img_name))
-            name = img_name[:-4]
-            faces_dir = sorted(os.listdir(FACES_PATH))
-            gen_imgs = np.array([])
-            for gen_img_name in faces_dir:
-                if gen_img_name.startswith(name):
-                    path = os.path.join(FACES_PATH, gen_img_name)
-                    gen_img = load_img(path)
-                    if gen_imgs.shape[0] == 0:
-                        gen_imgs = np.array(gen_img)
-                    else:
-                        new_shape = gen_imgs.shape[0] + 1
-                        gen_imgs = np.array(np.concatenate((gen_imgs, gen_img), axis=0))
-            key = img_name[:-4]
-            coords = torch.from_numpy(c_dict[key])
-            A = affine(coords)
-            out = insert_faces_to_image(img, A, torch.from_numpy(gen_imgs))
-            img = torchvision.transforms.ToPILImage(mode='RGB')(out[0, :, :, :])
-            path = os.path.join(NEW_PATH, img_name)
-            img.save(path, "PNG")
+def get_background(input, A, PS):
+      x_coords, y_coords = create_grid(A, 1, PS)
+      square = input[0, :, y_coords, x_coords].squeeze()
+      return np.transpose(square, (1, 2, 0)).numpy()
